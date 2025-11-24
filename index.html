@@ -42,7 +42,11 @@
                 </div>
 
                 <div class="mb-4">
-                    <p class="text-gray-600">Click below to begin a general heuristic evaluation of the system.</p>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-2">Assigned Tasks:</h3>
+                    <p class="text-gray-500 text-sm mb-3">Please evaluate the interface against the following user goals.</p>
+                    <div id="task-list" class="space-y-2">
+                        <!-- Read-only tasks rendered here -->
+                    </div>
                 </div>
 
                 <button id="start-eval-button" onclick="startEvaluation()" class="w-full mt-6 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-4 rounded-lg transition shadow-lg">
@@ -54,8 +58,12 @@
             <div id="step-2" class="card p-6 hidden">
                 <div class="flex items-center justify-between mb-6">
                     <div class="flex-grow">
-                         <h2 class="text-2xl font-bold text-gray-800">General System Evaluation</h2>
-                         <p class="text-sm text-gray-500">Review the interface against the 10 Usability Heuristics below.</p>
+                         <p class="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Current Task</p>
+                         <h2 class="text-2xl font-bold text-gray-800" id="current-task-name"></h2>
+                    </div>
+                    
+                    <div id="task-selection-area" class="ml-4">
+                        <select id="task-select" onchange="loadTaskForEvaluation(this.value)" class="p-2 border border-gray-300 rounded-lg text-sm max-w-xs"></select>
                     </div>
                 </div>
 
@@ -63,9 +71,9 @@
                     <!-- Heuristic evaluation items will be rendered here -->
                 </div>
 
-                <!-- Dynamic Action Button -->
-                <button id="btn-main-action" onclick="finishAndSubmit()" class="w-full mt-8 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition shadow-lg flex justify-center items-center">
-                    Submit & Finish Evaluation
+                <!-- Dynamic Action Button: Changes between "Next Task" and "Submit" -->
+                <button id="btn-main-action" class="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition shadow-lg flex justify-center items-center">
+                    Next Task →
                 </button>
             </div>
 
@@ -75,6 +83,20 @@
                 
                 <!-- Status Banner -->
                 <div id="submission-status-banner" class="mb-6 p-4 rounded-lg hidden"></div>
+
+                <div class="mb-6 p-4 bg-gray-50 rounded-lg shadow-inner">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">View Findings By:</label>
+                    <div class="flex space-x-4">
+                        <label class="flex items-center">
+                            <input type="radio" name="grouping" value="task" checked onchange="renderResultsSummary('task')" class="form-radio text-sky-600 focus:ring-sky-500">
+                            <span class="ml-2 text-gray-700 font-semibold">Task</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="grouping" value="heuristic" onchange="renderResultsSummary('heuristic')" class="form-radio text-sky-600 focus:ring-sky-500">
+                            <span class="ml-2 text-gray-700 font-semibold">Heuristic</span>
+                        </label>
+                    </div>
+                </div>
 
                 <div id="results-summary" class="space-y-4">
                     <!-- Evaluation results summary -->
@@ -97,9 +119,12 @@
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzUGfqyGjpD2bgVHKKnnYmUsXIFTs78TORBbQ0M55RcTZsGFjJDxNUqXkA4g8hrIVQ/exec";
         
         // --- PRE-DEFINED TASKS ---
-        // Single generic task to maintain data structure compatibility
+        // Edit this array to change the tasks shown to experts
         const INITIAL_TASKS = [
-            { id: 1, name: "General System Evaluation" }
+            { id: 1, name: "View Collision Case Details from Alert" },
+            { id: 2, name: "Reject Collision Case from Alert" },
+            { id: 3, name: "Add a New Collision Case" },
+            { id: 4, name: "Locate an Existing Collision Case and View Its Status" }  
         ];
 
         // Global state
@@ -131,7 +156,22 @@
         // --- Render Functions ---
 
         function renderTaskList() {
-            // No task list needed for general evaluation
+            const list = document.getElementById('task-list');
+            list.innerHTML = '';
+            
+            tasks.forEach(task => {
+                const item = document.createElement('div');
+                item.className = 'p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center';
+                item.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold mr-3 text-sm">${task.id}</div>
+                    <span class="text-gray-800 font-medium">${task.name}</span>
+                `;
+                list.appendChild(item);
+            });
+
+            // Update Dropdown in Step 2
+            const select = document.getElementById('task-select');
+            select.innerHTML = tasks.map(t => `<option value="${t.id}">Task ${t.id}</option>`).join('');
         }
 
         // --- Evaluation Flow ---
@@ -150,7 +190,7 @@
             document.getElementById('step-1').classList.add('hidden');
             document.getElementById('step-2').classList.remove('hidden');
             
-            // Load the single generic task
+            // Load the first task
             loadTaskForEvaluation(tasks[0].id);
         }
 
@@ -159,11 +199,42 @@
             currentTask = tasks.find(t => t.id === taskId);
 
             if (!currentTask) return;
+
+            document.getElementById('current-task-name').textContent = currentTask.name;
+            document.getElementById('task-select').value = taskId;
             
             renderEvaluationSections();
+            updateActionButton();
             
             // Scroll to top
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function updateActionButton() {
+            const btn = document.getElementById('btn-main-action');
+            const currentIndex = tasks.findIndex(t => t.id === currentTask.id);
+            const isLastTask = currentIndex === tasks.length - 1;
+
+            // Clone button to remove old event listeners easily
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+
+            if (isLastTask) {
+                newBtn.textContent = "Submit & Finish Evaluation";
+                newBtn.onclick = finishAndSubmit;
+                newBtn.className = "w-full mt-8 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition shadow-lg flex justify-center items-center";
+            } else {
+                newBtn.textContent = "Next Task →";
+                newBtn.onclick = goToNextTask;
+                newBtn.className = "w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition shadow-lg flex justify-center items-center";
+            }
+        }
+
+        function goToNextTask() {
+            const currentIndex = tasks.findIndex(t => t.id === currentTask.id);
+            if (currentIndex < tasks.length - 1) {
+                loadTaskForEvaluation(tasks[currentIndex + 1].id);
+            }
         }
 
         function renderEvaluationSections() {
@@ -197,7 +268,7 @@
 
                         <textarea 
                             id="comment-${currentTask.id}-${heuristic.id}" 
-                            placeholder="Where was this observed? Describe the issue..." 
+                            placeholder="Finding notes..." 
                             rows="3" 
                             onblur="updateEvaluationComment(${currentTask.id}, ${heuristic.id})"
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 transition"
@@ -310,12 +381,11 @@
                 banner.innerHTML = `<h3 class="font-bold">⚠ Connection Error</h3><p>We couldn't submit the data automatically. Please copy the JSON below and email it to the project lead.</p>`;
             }
 
-            // Always group by Heuristic for general evaluation
-            renderResultsSummary('heuristic');
+            renderResultsSummary('task');
             renderJsonExport();
         }
 
-        function renderResultsSummary(groupBy = 'heuristic') {
+        function renderResultsSummary(groupBy = 'task') {
             const summaryContainer = document.getElementById('results-summary');
             summaryContainer.innerHTML = '';
 
@@ -326,21 +396,27 @@
                 return;
             }
             
-            // Sort by Severity Descending
-            documentedEvaluations.sort((a, b) => b.severity - a.severity);
+            documentedEvaluations.sort((a, b) => {
+                if (b.severity !== a.severity) return b.severity - a.severity;
+                if (groupBy === 'task') return a.taskId - b.taskId;
+                return a.heuristicId - b.heuristicId;
+            });
 
-            // For general evaluation, we just list them all, maybe grouped by Heuristic if desired, 
-            // but a flat list sorted by severity is often best for a single pass.
-            // However, let's stick to Heuristic grouping to keep it organized.
-            
             const groupedResults = documentedEvaluations.reduce((acc, finding) => {
-                (acc[finding.heuristicId] = acc[finding.heuristicId] || []).push(finding);
+                const key = groupBy === 'task' ? finding.taskId : finding.heuristicId;
+                (acc[key] = acc[key] || []).push(finding);
                 return acc;
             }, {});
 
             Object.keys(groupedResults).forEach(key => {
                 const groupFindings = groupedResults[key];
-                const groupTitle = `${groupFindings[0].heuristicId}. ${groupFindings[0].heuristicName}`;
+                let groupTitle;
+
+                if (groupBy === 'task') {
+                    groupTitle = `Findings for Task: ${groupFindings[0].taskName}`;
+                } else {
+                    groupTitle = `Findings for Heuristic ${groupFindings[0].heuristicId}: ${groupFindings[0].heuristicName}`;
+                }
 
                 const header = document.createElement('h3');
                 header.className = 'text-xl font-bold text-gray-800 mt-6 mb-3 border-b pb-1 border-gray-200';
@@ -359,9 +435,14 @@
                         'severity-4': 'bg-red-100 text-red-900 border-red-700', 
                     };
 
+                    const label = groupBy === 'task' 
+                        ? `${finding.heuristicId}. ${finding.heuristicName}` 
+                        : `Task: ${finding.taskName}`;
+
                     item.className = `p-3 border-l-4 rounded-r-lg shadow-sm mb-3 ${colorMap[severityData.color]}`;
                     item.innerHTML = `
                         <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-sm">${label}</span>
                             <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-white bg-opacity-50">
                                 ${severityData.label}
                             </span>
